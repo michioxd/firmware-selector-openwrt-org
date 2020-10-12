@@ -4,49 +4,7 @@ include:
 
 stages:
   - pre-build
-  - test
   - deploy
-
-check HTML, JS, CSS with eslint and prettier:
-  stage: pre-build
-  image: node
-  cache:
-    paths:
-      - node_modules/
-  script:
-    - yarn install
-    - yarn prettier --check www/
-    - yarn eslint www/
-
-check HTML, CSS and SVG with html5validator:
-  stage: pre-build
-  image: cyb3rjak3/html5validator:latest
-  script:
-    - html5validator --root www --also-check-css --show-warnings --log INFO
-
-.build python:
-  stage: pre-build
-  image: python:$CI_PYTHON_VERSION-slim-buster
-  before_script:
-    - apt-get update; apt-get install -y make
-  script:
-    - cp -R ./www ./build
-    - misc/collect.py scrape https://downloads.openwrt.org build
-  artifacts:
-    expire_in: 1 week
-    when: always
-    paths:
-      - build
-
-build site on Python 3.6:
-  extends: .build python
-  variables:
-    CI_PYTHON_VERSION: "3.6"
-
-build site on Python 3.8:
-  extends: .build python
-  variables:
-    CI_PYTHON_VERSION: "3.8"
 
 .build site:
   stage: pre-build
@@ -66,33 +24,6 @@ build site for target environment using scrape method:
     - sed -i "s;%GIT_VERSION%;$(git describe --tags);" build/index.html
     - misc/collect.py scrape https://downloads.openwrt.org build
 
-build site for target environment using scan method:
-  extends: .build site
-  script:
-    - cp -R ./www ./build
-    - sed -i "s;%GIT_VERSION%;$(git describe --tags);" build/index.html
-    - misc/collect.py scan downloads.openwrt.org tests/profiles build
-
-.test site:
-  stage: test
-  image: selenium/standalone-firefox:latest
-  script:
-    - /opt/bin/entry_point.sh &
-    - sudo apt-get update; sudo apt-get install -y python3-pip python3-pytest
-    - pip3 install selenium-firefox
-    - (cd build; python3 -m http.server &)
-    - pytest-3 tests
-
-test scraped site with selenium:
-  extends: .test site
-  dependencies:
-    - build site for target environment using scrape method
-
-test scaned site with selenium:
-  extends: .test site
-  dependencies:
-    - build site for target environment using scan method
-
 .deploy:
   stage: deploy
   image: alpine
@@ -100,9 +31,11 @@ test scaned site with selenium:
     - build site for target environment using scrape method
   before_script:
     - apk update && apk add rsync
+    - echo $RSYNC_PASSWORD | sha256sum
   only:
     - master
     - tags
+    - ynezz/rsync-debug
   script:
     - rsync -rlptvz build/ "rsync://firmware_selector@mirror-02.infra.openwrt.org/$RSYNC_TARGET/www/"
 
